@@ -8,7 +8,15 @@ import hashlib
 import pathlib
 import multiprocessing
 
+BUILD_CONFIG_LOOK_PATH = ["./build.json", "./source/build.json", "./src/build.json"]
 NUM_CORES = multiprocessing.cpu_count()
+
+def find_build_info():
+	for path in BUILD_CONFIG_LOOK_PATH:
+		if os.path.isfile(path):
+			return path
+	
+	raise FileNotFoundError("Could not find build config")
 
 def load_build_config(profile = "default"):
 	"""
@@ -16,7 +24,7 @@ def load_build_config(profile = "default"):
 	compiler location information)
 	"""
 	
-	with open("build.json", "r") as f:
+	with open(find_build_info(), "r") as f:
 		return json.load(f).get(profile, None)
 
 def list_files_in_folder(d, ending = ".c"):
@@ -243,6 +251,9 @@ def main():
 	with multiprocessing.Pool(NUM_CORES) as p:
 		hashes = dict(p.starmap(mapped_do_hashing, [(compiler, defines, include, config["includes"], fn) for fn in files]))
 	
+	# Get if the output object should be shared
+	shared = config.get("shared", False)
+	
 	# Build changed files
 	print(f"\033[36m[Build items]\033[m")
 	
@@ -264,7 +275,7 @@ def main():
 		else:
 			print(f"\033[36m[{progress} Building item: \"{infile}\"]\033[0m")
 			
-			status = os.system(f"{compiler} -c {defines} -o {outfile} -Wall -Wextra -Wno-missing-braces -Wno-unused-parameter {infile} {include}")
+			status = os.system(f"{compiler} -c {defines} -o {outfile} {'-fpic' if shared else ''} -Wall -Wextra -Wno-missing-braces -Wno-unused-parameter {infile} {include}")
 			
 			if (status):
 				print(f"\033[31m[Failed to build \"{infile}\"]\033[0m")
@@ -292,7 +303,7 @@ def main():
 	# Link!
 	print(f"\033[32m[Linking binary]\033[0m")
 	
-	link_cmd = f"{compiler} -o temp/{executable_name}{executable_ext} -std=c23 {object_files} {include}"
+	link_cmd = f"{compiler} -o temp/{executable_name}{executable_ext} -std=c23 {'-shared' if shared else ''} -rdynamic {object_files} {include}"
 	status = os.system(link_cmd)
 	
 	if (status):
