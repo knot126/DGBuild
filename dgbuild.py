@@ -203,7 +203,7 @@ def build_main():
 		os.system("cls")
 	
 	# Set up the profile
-	profile = sys.argv[1] if len(sys.argv) > 1 else sys.platform
+	profile = sys.argv[2] if len(sys.argv) > 2 else sys.platform
 	
 	try:
 		config = load_build_config(profile)
