@@ -7,9 +7,23 @@ import json
 import hashlib
 import pathlib
 import multiprocessing
+from subprocess import run as runcmd
+from enum import Enum
 
 BUILD_CONFIG_LOOK_PATH = ["./build.json", "./source/build.json", "./src/build.json"]
 NUM_CORES = multiprocessing.cpu_count()
+
+class Colour:
+	Red = 1
+	Green = 2
+	Yellow = 3
+	Blue = 4
+	Magenta = 5
+	Cyan = 6
+	White = 7
+
+def log(colour, *args):
+	print(f"\033[3{colour}m" + " ".join([str(x) for x in args]) + "\033[0m")
 
 def find_build_info():
 	for path in BUILD_CONFIG_LOOK_PATH:
@@ -160,12 +174,12 @@ def align_string(base, count = 8):
 	
 	return "".join(string)
 
-def which_cc():
+def which_cc(preferred = []):
 	"""
 	Get the best available c compiler name
 	"""
 	
-	cc_names = ["clang", "gcc", "tcc", "cc"]
+	cc_names = preferred + ["clang", "gcc", "tcc", "cc"]
 	
 	for cc in cc_names:
 		path = shutil.which(cc)
@@ -184,13 +198,19 @@ def mapped_do_hashing(compiler, defines, include, config_includes, filename):
 		print(f"\033[36m[Process file: \"{filename}\"]\033[m")
 		return (filename, hash_preprocessed_file(filename, config_includes))
 
-def main():
+def build_main():
 	if (sys.platform == "win32"):
 		os.system("cls")
 	
 	# Set up the profile
 	profile = sys.argv[1] if len(sys.argv) > 1 else sys.platform
-	config = load_build_config(profile)
+	
+	try:
+		config = load_build_config(profile)
+	except FileNotFoundError:
+		log(Colour.Red, "Could not find build config.")
+		print("If this is a new repo, run:\n\n\tdgbuild init\n\nto generate a new config.")
+		return 1
 	
 	if (config == None):
 		print(f"\033[31m[No such build profile: {profile}]\033[0m")
@@ -227,7 +247,10 @@ def main():
 	print(f"\033[35m[Defines: {defines}]\033[0m")
 	
 	# Get compiler info (TODO: hope we can make this somewhat automatic soon)
-	compiler = config.get("compiler", which_cc())
+	compiler = which_cc(config.get("compilers", []))
+	
+	if not compiler:
+		log(Colour.Red, "Could not find a C compiler")
 	
 	print(f"\033[35m[C compiler: {compiler}]\033[0m")
 	
@@ -315,6 +338,65 @@ def main():
 	# pathlib.Path(f"temp/runes/{executable_name}{rune_count}.rune").write_text(link_cmd)
 	
 	return status
+
+def init_main():
+	if os.path.exists("build.json"):
+		log(Colour.Red, "There is already a project in this directory")
+		return
+	
+	# Write default build config
+	pathlib.Path("build.json").write_text(json.dumps({
+		sys.platform: {
+			"prebuild": [],
+			"includes": ["source"],
+			"links": ["m"],
+			"defines": [],
+			"output": "project"
+		}
+	}, indent=4))
+	
+	# Write a good gitignore file
+	if not os.path.exists(".gitignore"):
+		pathlib.Path(".gitignore").write_text("temp/\nlocalconf.json\n")
+	
+	# Make small structure if needed
+	if not os.path.exists("source"):
+		os.makedirs("source")
+		pathlib.Path("source/main.c").write_text('#include <stdio.h>\n\nint main(int argc, char *argv[]) {\n\tprintf("Hello, world!\\n");\n\treturn 0;\n}\n')
+	
+	# If git is available, init a repo and add all stuff from the dir, but don't
+	# commit any of it.
+	git = shutil.which("git")
+	
+	if git:
+		runcmd(['git', 'init', '.'])
+		runcmd(['git', 'add', '.'])
+	
+	print("Project initialised!")
+
+def help_main():
+	print(f"""DgBuild: an easy to use build system
+Copyright (C) 2023 - 2025 Knot126
+  
+Usage: {sys.argv[0]} <action> [<option> ...]
+
+Actions:
+    build     Build the project, if there is anything to build. If no action is
+              specified at the command line, this is the default.
+    init      Create a very barebones project in the current directory.
+    help      Print this help message.
+""")
+
+def main():
+	if len(sys.argv) < 2:
+		build_main()
+	elif sys.argv[1] == "init":
+		init_main()
+	elif sys.argv[1] == "help":
+		help_main()
+	else:
+		log(Colour.Red, f"Unknown action: {sys.argv[1]}")
+		help_main()
 
 if (__name__ == "__main__"):
 	main()
